@@ -471,3 +471,70 @@ TEST(ZoomRatioTest, ZoomOverZoomRangeTest) {
     subZoomOverZoomRangeTest(false/*usePreCorrectArray*/);
     subZoomOverZoomRangeTest(true/*usePreCorrectArray*/);
 }
+
+TEST(ZoomRatioTest, CorrectMalformedNativeZoomResultCrop) {
+    ZoomRatioMapper mapper;
+    float zoomRatioRange[2] = {0.67f, 20.0f};
+    ASSERT_EQ(setupTestMapper(&mapper, 10.0f, testActiveArraySize,
+            testPreCorrActiveArraySize, true, zoomRatioRange, false), OK);
+
+    CameraMetadata result;
+    float zoomRatio = 1.916f;
+    int32_t malformedCrop[4] = {1136, 852, 1822, 1367};
+    std::array<int32_t, 4> requestedCrop = {0, 0, 4096, 3072};
+    result.update(ANDROID_CONTROL_ZOOM_RATIO, &zoomRatio, 1);
+    result.update(ANDROID_SCALER_CROP_REGION, malformedCrop, 4);
+
+    ASSERT_EQ(mapper.correctCaptureResultCrop(&result, requestedCrop), OK);
+    camera_metadata_entry_t entry = result.find(ANDROID_SCALER_CROP_REGION);
+    ASSERT_EQ(entry.count, requestedCrop.size());
+    for (size_t i = 0; i < requestedCrop.size(); i++) {
+        EXPECT_EQ(entry.data.i32[i], requestedCrop[i]);
+    }
+}
+
+TEST(ZoomRatioTest, PreserveValidAndSubOneNativeZoomResultCrops) {
+    ZoomRatioMapper mapper;
+    float zoomRatioRange[2] = {0.67f, 20.0f};
+    ASSERT_EQ(setupTestMapper(&mapper, 10.0f, testActiveArraySize,
+            testPreCorrActiveArraySize, true, zoomRatioRange, false), OK);
+
+    std::array<int32_t, 4> requestedCrop = {0, 0, 4096, 3072};
+    CameraMetadata validResult;
+    float zoomRatio = 1.916f;
+    validResult.update(ANDROID_CONTROL_ZOOM_RATIO, &zoomRatio, 1);
+    validResult.update(ANDROID_SCALER_CROP_REGION,
+            requestedCrop.data(), requestedCrop.size());
+    ASSERT_EQ(mapper.correctCaptureResultCrop(&validResult, requestedCrop), OK);
+
+    CameraMetadata subOneResult;
+    float subOneZoomRatio = 0.67f;
+    int32_t halCrop[4] = {100, 100, 3896, 2872};
+    subOneResult.update(ANDROID_CONTROL_ZOOM_RATIO, &subOneZoomRatio, 1);
+    subOneResult.update(ANDROID_SCALER_CROP_REGION, halCrop, 4);
+    ASSERT_EQ(mapper.correctCaptureResultCrop(&subOneResult, requestedCrop), OK);
+    camera_metadata_entry_t entry = subOneResult.find(ANDROID_SCALER_CROP_REGION);
+    for (size_t i = 0; i < requestedCrop.size(); i++) {
+        EXPECT_EQ(entry.data.i32[i], halCrop[i]);
+    }
+}
+
+TEST(ZoomRatioTest, RestoreNativeZoomWindowboxCrop) {
+    ZoomRatioMapper mapper;
+    float zoomRatioRange[2] = {0.67f, 20.0f};
+    ASSERT_EQ(setupTestMapper(&mapper, 10.0f, testActiveArraySize,
+            testPreCorrActiveArraySize, true, zoomRatioRange, false), OK);
+
+    CameraMetadata result;
+    float zoomRatio = 2.0f;
+    int32_t malformedCrop[4] = {1024, 768, 2048, 1536};
+    std::array<int32_t, 4> windowboxCrop = {0, 256, 4096, 2560};
+    result.update(ANDROID_CONTROL_ZOOM_RATIO, &zoomRatio, 1);
+    result.update(ANDROID_SCALER_CROP_REGION, malformedCrop, 4);
+
+    ASSERT_EQ(mapper.correctCaptureResultCrop(&result, windowboxCrop), OK);
+    camera_metadata_entry_t entry = result.find(ANDROID_SCALER_CROP_REGION);
+    for (size_t i = 0; i < windowboxCrop.size(); i++) {
+        EXPECT_EQ(entry.data.i32[i], windowboxCrop[i]);
+    }
+}

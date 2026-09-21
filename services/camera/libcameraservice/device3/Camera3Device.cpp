@@ -2959,6 +2959,7 @@ status_t Camera3Device::registerInFlight(uint32_t frameNumber,
         bool isFixedFps, const std::set<std::set<std::string>>& physicalCameraIds,
         bool isStillCapture, bool isZslCapture, bool rotateAndCropAuto, bool autoframingAuto,
         const std::set<std::string>& cameraIdsWithZoom, bool useZoomRatio,
+        const std::optional<std::array<int32_t, 4>>& zoomRatioCropRegion,
         const SurfaceMap& outputSurfaces, nsecs_t requestTimeNs,
         const TransformationMap &transform) {
     ATRACE_CALL();
@@ -2968,7 +2969,7 @@ status_t Camera3Device::registerInFlight(uint32_t frameNumber,
     res = mInFlightMap.add(frameNumber, InFlightRequest(numBuffers, resultExtras, hasInput,
             hasAppCallback, minExpectedDuration, maxExpectedDuration, isFixedFps, physicalCameraIds,
             isStillCapture, isZslCapture, rotateAndCropAuto, autoframingAuto, cameraIdsWithZoom,
-            requestTimeNs, useZoomRatio, outputSurfaces, transform));
+            requestTimeNs, useZoomRatio, zoomRatioCropRegion, outputSurfaces, transform));
     if (res < 0) return res;
 
     if (mInFlightMap.size() == 1) {
@@ -4325,6 +4326,14 @@ status_t Camera3Device::RequestThread::prepareHalRequests() {
                 }
             }
         }
+        std::optional<std::array<int32_t, 4>> zoomRatioCropRegion;
+        camera_metadata_ro_entry_t cropRegionEntry = camera_metadata_ro_entry_t();
+        find_camera_metadata_ro_entry(settings, ANDROID_SCALER_CROP_REGION, &cropRegionEntry);
+        if (cropRegionEntry.count == 4) {
+            zoomRatioCropRegion = std::array<int32_t, 4>{
+                    cropRegionEntry.data.i32[0], cropRegionEntry.data.i32[1],
+                    cropRegionEntry.data.i32[2], cropRegionEntry.data.i32[3]};
+        }
         bool passSurfaceMap =
                 mUseHalBufManager || containsHalBufferManagedStream;
         auto expectedDurationInfo = calculateExpectedDurationRange(settings);
@@ -4337,7 +4346,7 @@ status_t Camera3Device::RequestThread::prepareHalRequests() {
                 expectedDurationInfo.isFixedFps,
                 requestedPhysicalCameras, isStillCapture, isZslCapture,
                 captureRequest->mRotateAndCropAuto, captureRequest->mAutoframingAuto,
-                mPrevCameraIdsWithZoom, useZoomRatio,
+                mPrevCameraIdsWithZoom, useZoomRatio, zoomRatioCropRegion,
                 passSurfaceMap ? uniqueSurfaceIdMap :
                                       SurfaceMap{}, captureRequest->mRequestTimeNs, transformMap);
         ALOGVV("%s: registered in flight requestId = %" PRId32 ", frameNumber = %" PRId64

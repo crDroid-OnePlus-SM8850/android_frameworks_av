@@ -1363,6 +1363,7 @@ class Camera3Device :
             bool isFixedFps, const std::set<std::set<std::string>>& physicalCameraIds,
             bool isStillCapture, bool isZslCapture, bool rotateAndCropAuto, bool autoframingAuto,
             const std::set<std::string>& cameraIdsWithZoom, bool useZoomRatio,
+            const std::optional<std::array<int32_t, 4>>& zoomRatioCropRegion,
             const SurfaceMap& outputSurfaces, nsecs_t requestTimeNs,
             const TransformationMap& transform);
 

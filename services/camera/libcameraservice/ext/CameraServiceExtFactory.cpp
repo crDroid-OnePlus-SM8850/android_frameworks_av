@@ -17,7 +17,6 @@ void CameraServiceExtFactory::ensureLoaded() {
         ALOGE("CameraServiceExtFactory: dlopen failed: %s", dlerror());
         return;
     }
-    ALOGI("CameraServiceExtFactory: dlopen succeeded, handle=%p", handle);
 
     typedef void* (*GetFactoryFunc)();
     GetFactoryFunc getExtFactoryImpl = (GetFactoryFunc)dlsym(handle, "getExtFactoryImpl");
@@ -26,7 +25,6 @@ void CameraServiceExtFactory::ensureLoaded() {
         dlclose(handle);
         return;
     }
-    ALOGI("CameraServiceExtFactory: getExtFactoryImpl at %p", getExtFactoryImpl);
 
     // Triple indirection as determined from logs: getExtFactoryImpl returns ptr to ptr to ptr to function
     void* ptrToPtr = getExtFactoryImpl();
@@ -49,19 +47,15 @@ void CameraServiceExtFactory::ensureLoaded() {
         dlclose(handle);
         return;
     }
-    ALOGI("CameraServiceExtFactory: actual factory function at %p", actualFunc);
 
     sFunctionTable = operator new(8);
     *(void**)sFunctionTable = actualFunc;
-    ALOGI("CameraServiceExtFactory: function table at %p", sFunctionTable);
 
     // Resolve onTransact (for direct call via vtable)
     sOnTransactFunc = (int (*)(void*, uint32_t, const Parcel&, Parcel*, uint32_t))
         dlsym(handle, "_ZN7android20CameraServiceExtImpl10onTransactEjRKNS_6ParcelEPS1_j");
     if (sOnTransactFunc == nullptr) {
         ALOGE("CameraServiceExtFactory: dlsym onTransact failed: %s", dlerror());
-    } else {
-        ALOGI("CameraServiceExtFactory: onTransact found at %p", sOnTransactFunc);
     }
 }
 
@@ -85,7 +79,6 @@ int CameraServiceExtFactory::onTransact(uint32_t code, const Parcel& data, Parce
             ALOGE("CameraServiceExtFactory: factory returned null");
             return -1;
         }
-        ALOGI("CameraServiceExtFactory: real extension object at %p", sExtObject);
     }
 
     if (sOnTransactFunc == nullptr) {
