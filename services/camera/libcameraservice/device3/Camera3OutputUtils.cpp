@@ -32,6 +32,7 @@
 
 #include <inttypes.h>
 
+#include <android-base/properties.h>
 #include <utils/Log.h>
 #include <utils/SortedVector.h>
 #include <utils/Trace.h>
@@ -62,6 +63,10 @@ namespace flags = com::android::internal::camera::flags;
 
 namespace android {
 namespace camera3 {
+
+const InFlightRequest& getEffectiveZoomRequestLocked(
+        const InFlightRequestMap& inflightMap, const CameraMetadata& metadata,
+        const InFlightRequest& request);
 
 status_t fixupMonochromeTags(
         CaptureOutputStates& states,
@@ -389,12 +394,34 @@ void sendCaptureResult(
     // Fix up result metadata to account for zoom ratio availabilities between
     // HAL and app.
     bool zoomRatioIs1 = cameraIdsWithZoom.find(states.cameraId) == cameraIdsWithZoom.end();
-    res = states.zoomRatioMappers[states.cameraId].updateCaptureResult(
+    auto& zoomRatioMapper = states.zoomRatioMappers[states.cameraId];
+    res = zoomRatioMapper.updateCaptureResult(
             &captureResult.mMetadata, useZoomRatio, zoomRatioIs1);
     if (res != OK) {
         SET_ERR("Failed to update capture result zoom ratio metadata for frame %d: %s (%d)",
                 frameNumber, strerror(-res), res);
         return;
+    }
+
+    static const bool normalizeInfinitiZoomCrop =
+            android::base::GetProperty("ro.product.vendor.device", "") == "OP611FL1";
+    const InFlightRequest* zoomRequest = nullptr;
+    ssize_t inflightIdx = states.inflightMap.indexOfKey(frameNumber);
+    if (inflightIdx >= 0) {
+        const auto& currentRequest = states.inflightMap.valueAt(inflightIdx);
+        zoomRequest = &getEffectiveZoomRequestLocked(
+                states.inflightMap, pendingMetadata, currentRequest);
+    }
+    if (normalizeInfinitiZoomCrop && !zoomRatioIs1 && zoomRequest != nullptr
+            && zoomRequest->zoomRatioCropRegion.has_value()
+            && zoomRatioMapper.supportsNativeZoomRatio()) {
+        res = zoomRatioMapper.correctCaptureResultCrop(
+                &captureResult.mMetadata, zoomRequest->zoomRatioCropRegion.value());
+        if (res != OK) {
+            SET_ERR("Failed to correct capture result crop metadata for frame %d: %s (%d)",
+                    frameNumber, strerror(-res), res);
+            return;
+        }
     }
 
     // Fix up result metadata to account for rotateAndCrop in AUTO mode
@@ -591,9 +618,9 @@ bool erasePhysicalCameraIdSet(
     return found;
 }
 
-const std::set<std::string>& getCameraIdsWithZoomLocked(
+const InFlightRequest& getEffectiveZoomRequestLocked(
         const InFlightRequestMap& inflightMap, const CameraMetadata& metadata,
-        const std::set<std::string>& cameraIdsWithZoom) {
+        const InFlightRequest& request) {
     camera_metadata_ro_entry overrideEntry =
             metadata.find(ANDROID_CONTROL_SETTINGS_OVERRIDE);
     camera_metadata_ro_entry frameNumberEntry =
@@ -602,7 +629,7 @@ const std::set<std::string>& getCameraIdsWithZoomLocked(
             || overrideEntry.data.i32[0] != ANDROID_CONTROL_SETTINGS_OVERRIDE_ZOOM
             || frameNumberEntry.count != 1) {
         // No valid overriding frame number, skip
-        return cameraIdsWithZoom;
+        return request;
     }
 
     uint32_t overridingFrameNumber = frameNumberEntry.data.i32[0];
@@ -610,11 +637,11 @@ const std::set<std::string>& getCameraIdsWithZoomLocked(
     if (idx < 0) {
         ALOGE("%s: Failed to find pending request #%d in inflight map",
                 __FUNCTION__, overridingFrameNumber);
-        return cameraIdsWithZoom;
+        return request;
     }
 
     const InFlightRequest &r = inflightMap.valueFor(overridingFrameNumber);
-    return r.cameraIdsWithZoom;
+    return r;
 }
 
 size_t getExpectedPhysicalMetadataCount(
@@ -859,13 +886,13 @@ void processCaptureResult(CaptureOutputStates& states, const camera_capture_resu
             } else if (request.hasCallback) {
                 CameraMetadata metadata;
                 metadata = result->result;
-                auto cameraIdsWithZoom = getCameraIdsWithZoomLocked(
-                        states.inflightMap, metadata, request.cameraIdsWithZoom);
+                const auto& zoomRequest = getEffectiveZoomRequestLocked(
+                        states.inflightMap, metadata, request);
                 sendCaptureResult(states, metadata, request.resultExtras,
                     collectedPartialResult, frameNumber,
                     hasInputBufferInRequest, request.zslCapture && request.stillCapture,
-                    request.rotateAndCropAuto, cameraIdsWithZoom, request.useZoomRatio,
-                    request.physicalMetadatas);
+                    request.rotateAndCropAuto, zoomRequest.cameraIdsWithZoom,
+                    zoomRequest.useZoomRatio, request.physicalMetadatas);
             }
         }
         removeInFlightRequestIfReadyLocked(states, idx, &returnableBuffers);
@@ -1169,14 +1196,14 @@ void notifyShutter(CaptureOutputStates& states, const camera_shutter_msg_t &msg)
                     }
                 }
                 // send pending result and buffers; this queues them up for delivery later
-                const auto& cameraIdsWithZoom = getCameraIdsWithZoomLocked(
-                        inflightMap, r.pendingMetadata, r.cameraIdsWithZoom);
+                const auto& zoomRequest = getEffectiveZoomRequestLocked(
+                        inflightMap, r.pendingMetadata, r);
                 sendCaptureResult(states,
                     r.pendingMetadata, r.resultExtras,
                     r.collectedPartialResult, msg.frame_number,
                     r.hasInputBuffer, r.zslCapture && r.stillCapture,
-                    r.rotateAndCropAuto, cameraIdsWithZoom, r.useZoomRatio,
-                    r.physicalMetadatas);
+                    r.rotateAndCropAuto, zoomRequest.cameraIdsWithZoom,
+                    zoomRequest.useZoomRatio, r.physicalMetadatas);
             }
             collectAndRemovePendingOutputBuffers(
                     states.useHalBufManager, states.halBufManagedStreamIds,

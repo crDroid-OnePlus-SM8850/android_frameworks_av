@@ -41,6 +41,8 @@ class ZoomRatioMapper : public CoordinateMapper {
     ZoomRatioMapper(const ZoomRatioMapper& other) :
             mHalSupportsZoomRatio(other.mHalSupportsZoomRatio),
             mArrayWidth(other.mArrayWidth), mArrayHeight(other.mArrayHeight),
+            mArrayWidthMaximumResolution(other.mArrayWidthMaximumResolution),
+            mArrayHeightMaximumResolution(other.mArrayHeightMaximumResolution),
             mIsValid(other.mIsValid) { initRemappedKeys(); }
 
     void initRemappedKeys() override;
@@ -68,6 +70,9 @@ class ZoomRatioMapper : public CoordinateMapper {
                                  bool zoomMethodIsRatio,
                                  bool zoomRatioIs1);
 
+    status_t correctCaptureResultCrop(CameraMetadata* result,
+            const std::array<int32_t, 4>& expectedCrop) const;
+
   public: // Visible for testing. Do not use concurently.
     void scaleCoordinates(int32_t* coordPairs, int coordCount,
             float scaleRatio, bool clamp, int32_t arrayWidth, int32_t arrayHeight);
@@ -75,6 +80,7 @@ class ZoomRatioMapper : public CoordinateMapper {
             int32_t arrayWidth, int32_t arrayHeight);
 
     bool isValid() { return mIsValid; }
+    bool supportsNativeZoomRatio() const { return mHalSupportsZoomRatio; }
   private:
     // const after construction
     bool mHalSupportsZoomRatio;

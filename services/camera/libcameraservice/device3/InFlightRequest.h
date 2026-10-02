@@ -17,6 +17,8 @@
 #ifndef ANDROID_SERVERS_CAMERA3_INFLIGHT_REQUEST_H
 #define ANDROID_SERVERS_CAMERA3_INFLIGHT_REQUEST_H
 
+#include <array>
+#include <optional>
 #include <set>
 
 #include <camera/CaptureResult.h>
@@ -201,6 +203,9 @@ struct InFlightRequest {
     // Whether the app explicitly uses ZOOM_RATIO
     bool useZoomRatio;
 
+    // Crop region sent to the HAL after zoom-ratio request normalization.
+    std::optional<std::array<int32_t, 4>> zoomRatioCropRegion;
+
     static const nsecs_t kDefaultMinExpectedDuration = 33333333; // 33 ms
     static const nsecs_t kDefaultMaxExpectedDuration = 100000000; // 100 ms
 
@@ -232,6 +237,7 @@ struct InFlightRequest {
             const std::set<std::set<std::string>>& physicalCameraIdSet, bool isStillCapture,
             bool isZslCapture, bool rotateAndCropAuto, bool autoframingAuto,
             const std::set<std::string>& idsWithZoom, nsecs_t requestNs, bool useZoomRatio,
+            const std::optional<std::array<int32_t, 4>>& zoomCropRegion,
             const SurfaceMap& outSurfaces = SurfaceMap{},
             const TransformationMap& transformMap = TransformationMap{}) :
             shutterTimestamp(0),
@@ -256,7 +262,8 @@ struct InFlightRequest {
             requestTimeNs(requestNs),
             outputSurfaces(outSurfaces),
             transform(transformMap),
-            useZoomRatio(useZoomRatio) {
+            useZoomRatio(useZoomRatio),
+            zoomRatioCropRegion(zoomCropRegion) {
     }
 };
 

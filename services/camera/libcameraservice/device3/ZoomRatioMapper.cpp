@@ -324,6 +324,36 @@ status_t ZoomRatioMapper::updateCaptureResult(
     return res;
 }
 
+status_t ZoomRatioMapper::correctCaptureResultCrop(CameraMetadata* result,
+        const std::array<int32_t, 4>& expectedCrop) const {
+    if (result == nullptr) {
+        return BAD_VALUE;
+    }
+
+    camera_metadata_entry stabilizationMode =
+            result->find(ANDROID_CONTROL_VIDEO_STABILIZATION_MODE);
+    if (stabilizationMode.count == 1
+            && stabilizationMode.data.u8[0] != ANDROID_CONTROL_VIDEO_STABILIZATION_MODE_OFF) {
+        return OK;
+    }
+
+    camera_metadata_entry zoomRatio = result->find(ANDROID_CONTROL_ZOOM_RATIO);
+    camera_metadata_entry cropRegion = result->find(ANDROID_SCALER_CROP_REGION);
+    if (zoomRatio.count != 1 || zoomRatio.data.f[0] <= 1.0f
+            || cropRegion.count != expectedCrop.size()
+            || expectedCrop[2] <= 0 || expectedCrop[3] <= 0) {
+        return OK;
+    }
+
+    for (size_t i = 0; i < expectedCrop.size(); i++) {
+        if (cropRegion.data.i32[i] != expectedCrop[i]) {
+            return result->update(ANDROID_SCALER_CROP_REGION,
+                    expectedCrop.data(), expectedCrop.size());
+        }
+    }
+    return OK;
+}
+
 status_t ZoomRatioMapper::deriveZoomRatio(const CameraMetadata* metadata, float *zoomRatioRet,
         int arrayWidth, int arrayHeight) {
     if (metadata == nullptr || zoomRatioRet == nullptr) {
